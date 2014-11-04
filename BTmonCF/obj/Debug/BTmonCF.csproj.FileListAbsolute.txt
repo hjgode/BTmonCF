@@ -1,0 +1,5 @@
+D:\c-source\Active\BTmonCF\BTmonCF\obj\Debug\ResolveAssemblyReference.cache
+D:\c-source\Active\BTmonCF\BTmonCF\bin\Debug\BTmonCF.dll
+D:\c-source\Active\BTmonCF\BTmonCF\bin\Debug\BTmonCF.pdb
+D:\c-source\Active\BTmonCF\BTmonCF\obj\Debug\BTmonCF.dll
+D:\c-source\Active\BTmonCF\BTmonCF\obj\Debug\BTmonCF.pdb
