@@ -13,18 +13,21 @@ namespace BTmonCFdemo
 {
     public partial class Form1 : Form
     {
-        btmon _btMon;
+        BTmon _btMon;
         public Form1()
         {
             InitializeComponent();
-            _btMon = new btmon();
-            _btMon.OnBTchangeEventHandler += new btmon.BTmonEventHandler(_btMon_BTchangeEventHandler);
+            _btMon = new BTmon();            
+            
+            //_btMon.OnBTchangeEventHandler += new btmon.BTmonEventHandler(_btMon_BTchangeEventHandler);            
+            _btMon.OnBTchangeEventHandler += new BTmon.BTmonEventHandler(_btMon_OnBTchangeEventHandler);
         }
 
-        void _btMon_BTchangeEventHandler(object sender, btmon.BTmonEventArgs e)
+        void _btMon_OnBTchangeEventHandler(object sender, BTmon.BTmonEventArgs e)
         {
             addLog(e.message);
         }
+
         delegate void SetTextCallback(string text);
         public void addLog(string text)
         {

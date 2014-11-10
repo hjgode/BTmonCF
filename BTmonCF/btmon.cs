@@ -1,4 +1,6 @@
-﻿using System;
+﻿#pragma warning disable 0168, 0169, 0649
+
+using System;
 
 using System.Collections.Generic;
 using System.Text;
@@ -10,11 +12,13 @@ using DWORD = System.UInt32;
 using BOOL = System.Boolean;
 using BYTE = System.Byte;
 using HANDLE = System.IntPtr;
+using USHORT = System.UInt16;
+using UCHAR = System.Byte;
 
 namespace BTmonCF
 {
 
-    public class btmon:System.Windows.Forms.Control
+    public class BTmon:System.Windows.Forms.Control
     {
         #region NativeStuff
         /*
@@ -49,6 +53,9 @@ namespace BTmonCF
         [DllImport("coredll.dll")]
         static extern IntPtr CreateMsgQueue(IntPtr hString, ref MSGQUEUEOPTIONS pOptions);
 
+        [DllImport("coredll.dll", SetLastError = true)]
+        internal static extern bool ReadMsgQueue(IntPtr hMsgQ, IntPtr lpBuffer, int cbBufferSize, out int lpNumberOfBytesRead, int dwTimeout, out int pdwFlags);
+
         [DllImport("coredll.dll")]
         static extern BOOL CloseMsgQueue(HANDLE h);
 
@@ -65,7 +72,63 @@ namespace BTmonCF
           [MarshalAs(UnmanagedType.ByValArray, SizeConst = 64)]
           public BYTE[] baEventData;
         }
+        // size of a BTEVENT structure:
+        //   DWORD dwEventId           = 4 bytes
+        //   DWORD dwReserved          = 4 bytes
+        //   BYTE  baEventData[64]     = 64 bytes
+        private const int SIZEOF_BTEVENT = 72;
 
+        struct BT_ADDR
+        {
+            byte b1;
+            byte b2;
+            byte b3;
+            byte b4;
+            byte b5;
+            byte b6;
+            byte b7;
+            byte b8;
+            public override string ToString()
+            {
+                string s = String.Format("{0:x02}:{1:x02}:{2:x02}:{3:x02}:{4:x02}:{5:x02}:{6:x02}:{7:x02}", b8, b7, b6, b5, b4, b3, b2, b1);
+                return s;
+            }
+        }
+
+        // BT event data type structs
+        [StructLayout(LayoutKind.Sequential)]
+        struct BT_CONNECT_EVENT{
+            public DWORD dwSize;         // To keep track of version
+            public USHORT hConnection;   // Baseband connection handle
+            public BT_ADDR bta;          // Address of remote device
+            public UCHAR ucLinkType;     // Link Type (ACL/SCO)
+            public UCHAR ucEncryptMode;  // Encryption mode
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct BT_DISCONNECT_EVENT{
+            public DWORD dwSize;         // To keep track of version
+            public USHORT hConnection;   // Baseband connection handle
+            public UCHAR ucReason;       // Reason for disconnection
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct BT_MODE_CHANGE_EVENT{
+            public DWORD dwSize;         // To keep track of version
+            public USHORT hConnection;   // Baseband connection handle
+            public BT_ADDR bta;          // Address of remote device
+            public BYTE bMode;           // Power mode (sniff, etc)
+            public USHORT usInterval;    // Power mode interval 
+        } 
+        [StructLayout(LayoutKind.Sequential)]
+        struct BT_LINK_KEY_EVENT{
+            public DWORD dwSize;        // To keep track of version
+            public BT_ADDR bta;         // Address of remote device
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
+            public UCHAR[] link_key;  // Link key data
+            public UCHAR key_type;      // Link key type
+        }
+ 
         [Flags]
         enum BTE_CLASSES:uint
         {
@@ -105,6 +168,7 @@ namespace BTmonCF
             public DWORD dwFlags;
             public DWORD dwMaxMessages;
             public DWORD cbMaxMessage;
+            [MarshalAs(UnmanagedType.Bool)]
             public BOOL bReadAccess;
             //MSGQUEUEOPTIONS()
             //{
@@ -115,7 +179,15 @@ namespace BTmonCF
             //    bReadAccess = true;
             //}
         }
+        // WINBASE.h header constants
+        private const int MSGQUEUE_NOPRECOMMIT = 1;
+        private const int MSGQUEUE_ALLOW_BROKEN = 2;
 
+        // MSGQUEUEOPTIONS constants
+        private const bool ACCESS_READWRITE = false;
+        private const bool ACCESS_READONLY = true;
+
+        #region bt_error_strings
         string[] szBTerror=new string[]{
 	        "0x00 undefined",
 	        "0x01 Unknown HCI Command.",
@@ -161,10 +233,11 @@ namespace BTmonCF
 	        "x29 Pairing with Unit Key Not Supported",
         };
         #endregion
+        #endregion
         System.Threading.Thread msgThread=null;
         bool bRunThread = true;
 
-        public btmon()
+        public BTmon()
         {
             startThread();
         }
@@ -202,11 +275,12 @@ namespace BTmonCF
             {
                 BTEVENT btEvent = new BTEVENT();
                 //create msgQueueOptions
-                MSGQUEUEOPTIONS msgQueueOptions = new MSGQUEUEOPTIONS();
+                MSGQUEUEOPTIONS msgQueueOptions = new MSGQUEUEOPTIONS();                
                 msgQueueOptions.dwSize = (DWORD)Marshal.SizeOf(msgQueueOptions);
-                msgQueueOptions.dwFlags = 0;
+                msgQueueOptions.dwFlags = 0;// MSGQUEUE_NOPRECOMMIT;
                 msgQueueOptions.dwMaxMessages = 10;
                 msgQueueOptions.cbMaxMessage = (DWORD)Marshal.SizeOf(btEvent);
+                msgQueueOptions.bReadAccess = ACCESS_READONLY;
 
                 hMsgQueue = CreateMsgQueue(IntPtr.Zero, ref msgQueueOptions);
 
@@ -232,14 +306,23 @@ namespace BTmonCF
                                 BTE_CLASSES.BTE_STACK_DOWN
                         , hMsgQueue
                     );
+                addLog("RequestBluetoothNotifications=" + Marshal.GetLastWin32Error().ToString()); //6 = InvalidHandle
+
                 if (hBTevent == IntPtr.Zero)
                     throw new Exception("RequestBluetoothNotifications failed");
+
+                // allocate space to store the received messages
+                IntPtr msgBuffer = Marshal.AllocHGlobal(SIZEOF_BTEVENT);
 
                 Wait_Object waitRes = 0;
                 //create a msg queue
                 while (bRunThread)
                 {
-                    waitRes = (Wait_Object)WaitForSingleObject(hBTevent, 5000);
+                    // initialise values returned by ReadMsgQueue
+                    int bytesRead = 0;
+                    int msgProperties = 0;
+                    //block until message
+                    waitRes = (Wait_Object)WaitForSingleObject(hMsgQueue, 5000);
                     if ((int)waitRes == -1)
                     {
                         int iErr = Marshal.GetLastWin32Error();
@@ -252,12 +335,58 @@ namespace BTmonCF
                             //signaled
                             //check event type and fire event
                             OnBTchanged(new BTmonEventArgs("BTEVENT signaled", false));
-                            switch (btEvent.dwEventId)
+                            //ReadMsgQueue entry
+                            bool success = ReadMsgQueue(hMsgQueue,   // the open message queue
+                                                        msgBuffer,        // buffer to store msg
+                                                        SIZEOF_BTEVENT,   // size of the buffer
+                                                        out bytesRead,    // bytes stored in buffer
+                                                        -1,         // wait forever
+                                                        out msgProperties);
+                            if (success)
+                            {
+                                // marshal the data read from the queue into a BTEVENT structure
+                                btEvent = (BTEVENT)Marshal.PtrToStructure(msgBuffer, typeof(BTEVENT));
+                            }
+
+                        // we are interested in the event type
+                        switch ((BTE_CLASSES)btEvent.dwEventId)
                             {
                                 case BTE_CLASSES.BTE_DISCONNECTION:
-                                case BTE_CLASSES.BTE_STACK_DOWN: 
-                                break;
-                                
+                                    GCHandle pinnedPacket1 = GCHandle.Alloc(btEvent.baEventData, GCHandleType.Pinned);
+                                    BT_DISCONNECT_EVENT btconndata1 = (BT_DISCONNECT_EVENT)Marshal.PtrToStructure(pinnedPacket1.AddrOfPinnedObject(), typeof(BT_DISCONNECT_EVENT));
+                                    OnBTchanged(new BTmonEventArgs("disconnected " + btconndata1.hConnection.ToString("x"), false));
+                                    pinnedPacket1.Free(); //00:1d:df:54:c5:c5
+                                    break;
+                                case BTE_CLASSES.BTE_STACK_DOWN:
+                                    OnBTchanged(new BTmonEventArgs("stack down! "+DateTime.Now.ToLongTimeString(),false));
+                                    break;
+                                case BTE_CLASSES.BTE_STACK_UP:
+                                    OnBTchanged(new BTmonEventArgs("stack up! " + DateTime.Now.ToLongTimeString(), false));
+                                    break;
+                                case BTE_CLASSES.BTE_CONNECTION_FAILED:
+                                    GCHandle pinnedPacket3 = GCHandle.Alloc(btEvent.baEventData, GCHandleType.Pinned);
+                                    BT_CONNECT_EVENT btconndata3 = (BT_CONNECT_EVENT)Marshal.PtrToStructure(pinnedPacket3.AddrOfPinnedObject(), typeof(BT_CONNECT_EVENT));
+                                    pinnedPacket3.Free(); //00:1d:df:54:c5:c5
+                                    OnBTchanged(new BTmonEventArgs("connect failed " + btconndata3.bta.ToString() + " " +btconndata3.hConnection.ToString("x"), false));                                    
+                                    break;
+                                case BTE_CLASSES.BTE_KEY_REVOKED:
+                                    GCHandle pinnedPacket4 = GCHandle.Alloc(btEvent.baEventData, GCHandleType.Pinned);
+                                    BT_LINK_KEY_EVENT btconndata4 = (BT_LINK_KEY_EVENT)Marshal.PtrToStructure(pinnedPacket4.AddrOfPinnedObject(), typeof(BT_LINK_KEY_EVENT));
+                                    pinnedPacket4.Free(); //00:1d:df:54:c5:c5
+                                    OnBTchanged(new BTmonEventArgs("disconnect " + btconndata4.bta.ToString(), false));                                    
+                                    break;
+                                case BTE_CLASSES.BTE_CONNECTION:
+                                    GCHandle pinnedPacket = GCHandle.Alloc(btEvent.baEventData, GCHandleType.Pinned);
+                                    BT_CONNECT_EVENT btconndata = (BT_CONNECT_EVENT)Marshal.PtrToStructure(pinnedPacket.AddrOfPinnedObject(), typeof(BT_CONNECT_EVENT));
+                                    pinnedPacket.Free(); //00:1d:df:54:c5:c5
+                                    OnBTchanged(new BTmonEventArgs("connected " + btconndata.bta.ToString() + " " +btconndata.hConnection.ToString("x"), true));
+                                    break;
+                                case BTE_CLASSES.BTE_MODE_CHANGE:
+                                    GCHandle pinnedPacket2 = GCHandle.Alloc(btEvent.baEventData, GCHandleType.Pinned);
+                                    BT_CONNECT_EVENT btconndata2 = (BT_CONNECT_EVENT)Marshal.PtrToStructure(pinnedPacket2.AddrOfPinnedObject(), typeof(BT_CONNECT_EVENT));
+                                    pinnedPacket2.Free(); //00:1d:df:54:c5:c5
+                                    OnBTchanged(new BTmonEventArgs("connected " + btconndata2.bta.ToString() + " " +btconndata2.hConnection.ToString("x"), true));
+                                    break;
                             }
                             break;
                         case Wait_Object.WAIT_ABANDONED:
@@ -266,7 +395,7 @@ namespace BTmonCF
                             break;
                         case Wait_Object.WAIT_TIMEOUT:
                             //timed out
-                            OnBTchanged(new BTmonEventArgs(".", false));
+                            //OnBTchanged(new BTmonEventArgs(".", false));
                             break;
                     }
 //                    System.Threading.Thread.Sleep(3000);
@@ -303,6 +432,7 @@ namespace BTmonCF
                 // Invokes the delegates. 
                 handler(this, e);
             }
+            System.Diagnostics.Debug.WriteLine(e.message);
         }
 
         public class BTmonEventArgs:EventArgs{
