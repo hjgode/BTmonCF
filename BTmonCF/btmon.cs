@@ -1,4 +1,23 @@
-﻿#pragma warning disable 0168, 0169, 0649
+﻿/*======================================================================
+
+UNLESS OTHERWISE AGREED TO IN A SIGNED WRITING BY HONEYWELL INTERNATIONAL INC
+(“HONEYWELL”) AND THE USER OF THIS CODE, THIS CODE AND INFORMATION IS PROVIDED
+"AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS
+FOR A PARTICULAR PURPOSE.
+
+COPYRIGHT (C) 2014 HONEYWELL INTERNATIONAL INC.
+
+THIS SOFTWARE IS PROTECTED BY COPYRIGHT LAWS OF THE UNITED STATES OF
+AMERICA AND OF FOREIGN COUNTRIES. THIS SOFTWARE IS FURNISHED UNDER A
+LICENSE AND/OR A NONDISCLOSURE AGREEMENT AND MAY BE USED IN ACCORDANCE
+WITH THE TERMS OF THOSE AGREEMENTS. UNAUTHORIZED REPRODUCTION,  DUPLICATION
+OR DISTRIBUTION OF THIS SOFTWARE, OR ANY PORTION OF IT  WILL BE PROSECUTED
+TO THE MAXIMUM EXTENT POSSIBLE UNDER THE LAW.
+
+======================================================================*/
+
+#pragma warning disable 0168, 0169, 0649
 
 using System;
 
@@ -17,231 +36,36 @@ using UCHAR = System.Byte;
 
 namespace BTmonCF
 {
-
-    public class BTmon:System.Windows.Forms.Control
+    /// <summary>
+    /// class to watch async for BT changes
+    /// </summary>
+    public partial class BTmon:System.Windows.Forms.Control
     {
-        #region NativeStuff
-        /*
-        HANDLE CreateMsgQueue(
-          LPCWSTR lpszName,
-          LPMSGQUEUEOPTIONS lpOptions
-        );
-        typedef MSGQUEUEOPTIONS_OS{
-          DWORD dwSize;
-          DWORD dwFlags;
-          DWORD dwMaxMessages;
-          DWORD cbMaxMessage;
-          BOOL bReadAccess;
-        } MSGQUEUEOPTIONS, FAR* LPMSGQUEUEOPTIONS, *PMSGQUEUEOPTIONS;
-        HANDLE RequestBluetoothNotifications(
-          DWORD dwClass,
-          HANDLE hMsgQ
-        );
-        */
-        [DllImport("coredll.dll", SetLastError = true)]
-        static extern UInt32 WaitForSingleObject(IntPtr hHandle, UInt32 dwMilliseconds);
-
-        const UInt32 INFINITE = 0xFFFFFFFF;
-        enum Wait_Object{
-            WAIT_ABANDONED = 0x00000080,
-            WAIT_OBJECT_0 = 0x00000000,
-            WAIT_TIMEOUT = 0x00000102,
-        }
-
-        [DllImport("coredll.dll")]
-        static extern IntPtr CreateMsgQueue(string szName, ref MSGQUEUEOPTIONS pOptions);
-        [DllImport("coredll.dll")]
-        static extern IntPtr CreateMsgQueue(IntPtr hString, ref MSGQUEUEOPTIONS pOptions);
-
-        [DllImport("coredll.dll", SetLastError = true)]
-        internal static extern bool ReadMsgQueue(IntPtr hMsgQ, IntPtr lpBuffer, int cbBufferSize, out int lpNumberOfBytesRead, int dwTimeout, out int pdwFlags);
-
-        [DllImport("coredll.dll")]
-        static extern BOOL CloseMsgQueue(HANDLE h);
-
-        [DllImport("coredll.dll", SetLastError=true)]
-        static extern IntPtr RequestBluetoothNotifications(BTE_CLASSES dwClass, IntPtr hMsgQueue);
-    
-        [DllImport("coredll.dll")]
-        static extern BOOL StopBluetoothNotifications(HANDLE h);
-        
-        [StructLayout(LayoutKind.Sequential)]
-        struct BTEVENT {
-          public DWORD dwEventId;
-          public DWORD dwReserved;
-          [MarshalAs(UnmanagedType.ByValArray, SizeConst = 64)]
-          public BYTE[] baEventData;
-        }
-        // size of a BTEVENT structure:
-        //   DWORD dwEventId           = 4 bytes
-        //   DWORD dwReserved          = 4 bytes
-        //   BYTE  baEventData[64]     = 64 bytes
-        private const int SIZEOF_BTEVENT = 72;
-
-        struct BT_ADDR
-        {
-            byte b1;
-            byte b2;
-            byte b3;
-            byte b4;
-            byte b5;
-            byte b6;
-            byte b7;
-            byte b8;
-            public override string ToString()
-            {
-                string s = String.Format("{0:x02}:{1:x02}:{2:x02}:{3:x02}:{4:x02}:{5:x02}:{6:x02}:{7:x02}", b8, b7, b6, b5, b4, b3, b2, b1);
-                return s;
-            }
-        }
-
-        // BT event data type structs
-        [StructLayout(LayoutKind.Sequential)]
-        struct BT_CONNECT_EVENT{
-            public DWORD dwSize;         // To keep track of version
-            public USHORT hConnection;   // Baseband connection handle
-            public BT_ADDR bta;          // Address of remote device
-            public UCHAR ucLinkType;     // Link Type (ACL/SCO)
-            public UCHAR ucEncryptMode;  // Encryption mode
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        struct BT_DISCONNECT_EVENT{
-            public DWORD dwSize;         // To keep track of version
-            public USHORT hConnection;   // Baseband connection handle
-            public UCHAR ucReason;       // Reason for disconnection
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        struct BT_MODE_CHANGE_EVENT{
-            public DWORD dwSize;         // To keep track of version
-            public USHORT hConnection;   // Baseband connection handle
-            public BT_ADDR bta;          // Address of remote device
-            public BYTE bMode;           // Power mode (sniff, etc)
-            public USHORT usInterval;    // Power mode interval 
-        } 
-        [StructLayout(LayoutKind.Sequential)]
-        struct BT_LINK_KEY_EVENT{
-            public DWORD dwSize;        // To keep track of version
-            public BT_ADDR bta;         // Address of remote device
-            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)]
-            public UCHAR[] link_key;  // Link key data
-            public UCHAR key_type;      // Link key type
-        }
- 
-        [Flags]
-        enum BTE_CLASSES:uint
-        {
-            BTE_CLASS_CONNECTIONS = 1,
-            BTE_CONNECTION = 100,
-            BTE_DISCONNECTION = 101,
-            BTE_ROLE_SWITCH = 102,
-            BTE_MODE_CHANGE = 103,
-            BTE_PAGE_TIMEOUT = 104,
-            BTE_CONNECTION_FAILED = 105,
-            BTE_CONNECTION_AUTH_FAILURE = 105,
-
-            BTE_CLASS_PAIRING	=	2,
-            BTE_KEY_NOTIFY		=	200,
-            BTE_KEY_REVOKED		=	201,
-
-            BTE_CLASS_DEVICE	=	4,
-            BTE_LOCAL_NAME		=	300,
-            BTE_COD				=	301,
-
-            BTE_CLASS_STACK		=	8,
-            BTE_STACK_UP		=	400,
-            BTE_STACK_DOWN		=	401,
-/*
-            BTE_CLASS_AVDTP		=	16,
-            BTE_AVDTP_STATE		=	500,
-            BT_AVDTP_STATE_DISCONNECTED     =0,
-            BT_AVDTP_STATE_SUSPENDED        =1,
-            BT_AVDTP_STATE_STREAMING       = 2,
-*/
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        struct MSGQUEUEOPTIONS
-        {
-            public DWORD dwSize;
-            public DWORD dwFlags;
-            public DWORD dwMaxMessages;
-            public DWORD cbMaxMessage;
-            [MarshalAs(UnmanagedType.Bool)]
-            public BOOL bReadAccess;
-            //MSGQUEUEOPTIONS()
-            //{
-            //    dwSize = Marshal.SizeOf(MSGQUEUEOPTIONS);
-            //    dwFlags = 0;
-            //    dwMaxMessages = 10;
-            //    cbMaxMessage = 0;
-            //    bReadAccess = true;
-            //}
-        }
-        // WINBASE.h header constants
-        private const int MSGQUEUE_NOPRECOMMIT = 1;
-        private const int MSGQUEUE_ALLOW_BROKEN = 2;
-
-        // MSGQUEUEOPTIONS constants
-        private const bool ACCESS_READWRITE = false;
-        private const bool ACCESS_READONLY = true;
-
-        #region bt_error_strings
-        string[] szBTerror=new string[]{
-	        "0x00 undefined",
-	        "0x01 Unknown HCI Command.",
-	        "0x02 No Connection.",
-	        "0x03 Hardware Failure.",
-	        "0x04 Page Timeout.",
-	        "0x05 Authentication Failure.",
-	        "0x06 Key Missing.",
-	        "0x07 Memory Full.",
-	        "0x08 Connection Timeout.",
-	        "0x09 Max Number Of Connections.",
-	        "0x0A Max Number Of SCO Connections To A Device.",
-	        "0x0B ACL connection already exists.",
-	        "0x0C Command Disallowed.",
-	        "0x0D Host Rejected due to limited resources.",
-	        "0x0E Host Rejected due to security reasons.",
-	        "0x0F Host Rejected due to remote device is only a personal device.",
-	        "0x10 Host Timeout.",
-	        "0x11 Unsupported Feature or Parameter Value.",
-	        "0x12 Invalid HCI Command Parameters.",
-	        "0x13 Other End Terminated Connection: User Ended Connection.",
-	        "0x14 Other End Terminated Connection: Low Resources.",
-	        "0x15 Other End Terminated Connection: About to Power Off.",
-	        "0x16 Connection Terminated by Local Host.",
-	        "0x17 Repeated Attempts.",
-	        "0x18 Pairing Not Allowed.",
-	        "0x19 Unknown LMP PDU.",
-	        "0x1A Unsupported Remote Feature.",
-	        "0x1B SCO Offset Rejected.",
-	        "0x1C SCO Interval Rejected.",
-	        "0x1D SCO Air Mode Rejected.",
-	        "0x1E Invalid LMP Parameters.",
-	        "0x1F Unspecified Error.",
-	        "0x20 Unsupported LMP Parameter Value.",
-	        "0x21 Role Change Not Allowed",
-	        "0x22 LMP Response Timeout",
-	        "0x23 LMP Error Transaction Collision",
-	        "0x24 LMP PDU Not Allowed",
-	        "0x25 Encryption Mode Not Acceptable",
-	        "0x26 Unit Key Used",
-	        "0x27 QoS is Not Supported",
-	        "0x28 Instant Passed",
-	        "x29 Pairing with Unit Key Not Supported",
-        };
-        #endregion
-        #endregion
         System.Threading.Thread msgThread=null;
         bool bRunThread = true;
+        object lockObject = new object();
+        bool _Connected = false;
+        public bool Connected
+        {
+            get
+            {
+                lock (lockObject)
+                {
+                    return _Connected;
+                }
+            }
+        }
 
         public BTmon()
         {
             startThread();
         }
-        
+
+        ~BTmon()
+        {
+            this.Dispose();
+        }
+
         void startThread()
         {
             bRunThread = true;
@@ -266,11 +90,23 @@ namespace BTmonCF
             base.Dispose();
         }
 
+        bool setConnected(bool bConnected)
+        {
+            lock (lockObject)
+            {
+                _Connected = bConnected;
+            }
+            return bConnected;
+        }
+
         void btMsgThread()
         {
             addLog("btmon thread about to start");
             IntPtr hMsgQueue=IntPtr.Zero;
             IntPtr hBTevent = IntPtr.Zero;
+            // allocate space to store the received messages
+            IntPtr msgBuffer = Marshal.AllocHGlobal(SIZEOF_BTEVENT);
+
             try
             {
                 BTEVENT btEvent = new BTEVENT();
@@ -289,21 +125,23 @@ namespace BTmonCF
 
                 hBTevent = RequestBluetoothNotifications(
                             BTE_CLASSES.BTE_CLASS_CONNECTIONS |
-                                BTE_CLASSES.BTE_CONNECTION |
-                                BTE_CLASSES.BTE_DISCONNECTION |
-                                BTE_CLASSES.BTE_ROLE_SWITCH |
-                                BTE_CLASSES.BTE_MODE_CHANGE |
-                                BTE_CLASSES.BTE_PAGE_TIMEOUT |
-                                BTE_CLASSES.BTE_CONNECTION_AUTH_FAILURE |
+                                //BTE_CLASSES.BTE_CONNECTION |
+                                //BTE_CLASSES.BTE_DISCONNECTION |
+                                //BTE_CLASSES.BTE_ROLE_SWITCH |
+                                //BTE_CLASSES.BTE_MODE_CHANGE |
+                                //BTE_CLASSES.BTE_PAGE_TIMEOUT |
+                                //BTE_CLASSES.BTE_CONNECTION_AUTH_FAILURE |
                             BTE_CLASSES.BTE_CLASS_PAIRING |
-                                BTE_CLASSES.BTE_KEY_NOTIFY |
-                                BTE_CLASSES.BTE_KEY_REVOKED |
+                                //BTE_CLASSES.BTE_KEY_NOTIFY |
+                                //BTE_CLASSES.BTE_KEY_REVOKED |
                             BTE_CLASSES.BTE_CLASS_DEVICE |
-                                BTE_CLASSES.BTE_LOCAL_NAME |
-                                BTE_CLASSES.BTE_COD |
+                                //BTE_CLASSES.BTE_LOCAL_NAME |
+                                //BTE_CLASSES.BTE_COD |
                             BTE_CLASSES.BTE_CLASS_STACK |
-                                BTE_CLASSES.BTE_STACK_UP |
-                                BTE_CLASSES.BTE_STACK_DOWN
+                                //BTE_CLASSES.BTE_STACK_UP |
+                                //BTE_CLASSES.BTE_STACK_DOWN |
+                            BTE_CLASSES.BTE_CLASS_SERVICE |
+                            BTE_CLASSES.BTE_CLASS_AVDTP
                         , hMsgQueue
                     );
                 addLog("RequestBluetoothNotifications=" + Marshal.GetLastWin32Error().ToString()); //6 = InvalidHandle
@@ -311,8 +149,12 @@ namespace BTmonCF
                 if (hBTevent == IntPtr.Zero)
                     throw new Exception("RequestBluetoothNotifications failed");
 
-                // allocate space to store the received messages
-                IntPtr msgBuffer = Marshal.AllocHGlobal(SIZEOF_BTEVENT);
+                //the different return data types
+                BT_connect_event_data bt_connect_data;
+                BT_disconnect_event_data bt_disconnect_data;
+                BT_mode_changed_event_data bt_mode_changed_data;
+                BT_link_key_event_data bt_link_event_data;
+                BT_role_switch_event_data bt_role_switch_event_data;
 
                 Wait_Object waitRes = 0;
                 //create a msg queue
@@ -334,7 +176,6 @@ namespace BTmonCF
                         case Wait_Object.WAIT_OBJECT_0:
                             //signaled
                             //check event type and fire event
-                            OnBTchanged(new BTmonEventArgs("BTEVENT signaled", false));
                             //ReadMsgQueue entry
                             bool success = ReadMsgQueue(hMsgQueue,   // the open message queue
                                                         msgBuffer,        // buffer to store msg
@@ -347,69 +188,83 @@ namespace BTmonCF
                                 // marshal the data read from the queue into a BTEVENT structure
                                 btEvent = (BTEVENT)Marshal.PtrToStructure(msgBuffer, typeof(BTEVENT));
                             }
+                            else
+                                continue; //start a new while cirlce
 
-                        // we are interested in the event type
-                        switch ((BTE_CLASSES)btEvent.dwEventId)
+                            System.Diagnostics.Debug.WriteLine("BTEVENT signaled: " + ((BTE_CLASSES)(btEvent.dwEventId)).ToString());
+
+                            // we are interested in the event type
+                            switch ((BTE_CLASSES)btEvent.dwEventId)
+                            #region BTE_EVENT_PROCESSSING
                             {
+                                case BTE_CLASSES.BTE_CONNECTION:
+                                    bt_connect_data = new BT_connect_event_data(btEvent.baEventData);
+                                    OnBTchanged(new BTmonEventArgs("connected " + bt_connect_data.bt_addr.ToString() + " 0x" + bt_connect_data.connect_handle.ToString("x08"),
+                                        setConnected(true)));
+                                    break;
                                 case BTE_CLASSES.BTE_DISCONNECTION:
-                                    GCHandle pinnedPacket1 = GCHandle.Alloc(btEvent.baEventData, GCHandleType.Pinned);
-                                    BT_DISCONNECT_EVENT btconndata1 = (BT_DISCONNECT_EVENT)Marshal.PtrToStructure(pinnedPacket1.AddrOfPinnedObject(), typeof(BT_DISCONNECT_EVENT));
-                                    OnBTchanged(new BTmonEventArgs("disconnected " + btconndata1.hConnection.ToString("x"), false));
-                                    pinnedPacket1.Free(); //00:1d:df:54:c5:c5
+                                    bt_disconnect_data = new BT_disconnect_event_data(btEvent.baEventData);
+                                    OnBTchanged(new BTmonEventArgs("disconnected 0x" + bt_disconnect_data.connect_handle.ToString("x08"),
+                                        setConnected(false)));
+                                    break;
+                                case BTE_CLASSES.BTE_ROLE_SWITCH:
+                                    bt_role_switch_event_data = new BT_role_switch_event_data(btEvent.baEventData);
+                                    OnBTchanged(new BTmonEventArgs("role switch 0x" + bt_role_switch_event_data.bt_addr.ToString() +
+                                        "role:" + bt_role_switch_event_data._role.ToString(), setConnected(false)));
                                     break;
                                 case BTE_CLASSES.BTE_STACK_DOWN:
-                                    OnBTchanged(new BTmonEventArgs("stack down! "+DateTime.Now.ToLongTimeString(),false));
+                                    OnBTchanged(new BTmonEventArgs("stack down! " + DateTime.Now.ToLongTimeString(),
+                                        setConnected(false)));
                                     break;
                                 case BTE_CLASSES.BTE_STACK_UP:
-                                    OnBTchanged(new BTmonEventArgs("stack up! " + DateTime.Now.ToLongTimeString(), false));
+                                    OnBTchanged(new BTmonEventArgs("stack up! " + DateTime.Now.ToLongTimeString(),
+                                        setConnected(false)));
                                     break;
                                 case BTE_CLASSES.BTE_CONNECTION_FAILED:
-                                    GCHandle pinnedPacket3 = GCHandle.Alloc(btEvent.baEventData, GCHandleType.Pinned);
-                                    BT_CONNECT_EVENT btconndata3 = (BT_CONNECT_EVENT)Marshal.PtrToStructure(pinnedPacket3.AddrOfPinnedObject(), typeof(BT_CONNECT_EVENT));
-                                    pinnedPacket3.Free(); //00:1d:df:54:c5:c5
-                                    OnBTchanged(new BTmonEventArgs("connect failed " + btconndata3.bta.ToString() + " " +btconndata3.hConnection.ToString("x"), false));                                    
+                                    bt_connect_data = new BT_connect_event_data(btEvent.baEventData);
+                                    OnBTchanged(new BTmonEventArgs("connect failed " + bt_connect_data.bt_addr.ToString() + " 0x" + bt_connect_data.connect_handle.ToString("x08"),
+                                        setConnected(false)));
                                     break;
                                 case BTE_CLASSES.BTE_KEY_REVOKED:
-                                    GCHandle pinnedPacket4 = GCHandle.Alloc(btEvent.baEventData, GCHandleType.Pinned);
-                                    BT_LINK_KEY_EVENT btconndata4 = (BT_LINK_KEY_EVENT)Marshal.PtrToStructure(pinnedPacket4.AddrOfPinnedObject(), typeof(BT_LINK_KEY_EVENT));
-                                    pinnedPacket4.Free(); //00:1d:df:54:c5:c5
-                                    OnBTchanged(new BTmonEventArgs("disconnect " + btconndata4.bta.ToString(), false));                                    
+                                    bt_link_event_data = new BT_link_key_event_data(btEvent.baEventData);
+                                    OnBTchanged(new BTmonEventArgs("key revoked " + bt_link_event_data.bt_addr.ToString(),
+                                        setConnected(false)));
                                     break;
-                                case BTE_CLASSES.BTE_CONNECTION:
-                                    GCHandle pinnedPacket = GCHandle.Alloc(btEvent.baEventData, GCHandleType.Pinned);
-                                    BT_CONNECT_EVENT btconndata = (BT_CONNECT_EVENT)Marshal.PtrToStructure(pinnedPacket.AddrOfPinnedObject(), typeof(BT_CONNECT_EVENT));
-                                    pinnedPacket.Free(); //00:1d:df:54:c5:c5
-                                    OnBTchanged(new BTmonEventArgs("connected " + btconndata.bta.ToString() + " " +btconndata.hConnection.ToString("x"), true));
+                                case BTE_CLASSES.BTE_KEY_NOTIFY:
+                                    bt_link_event_data = new BT_link_key_event_data(btEvent.baEventData);
+                                    OnBTchanged(new BTmonEventArgs("key notify " + bt_link_event_data.bt_addr.ToString(),
+                                        setConnected(false)));
                                     break;
                                 case BTE_CLASSES.BTE_MODE_CHANGE:
-                                    GCHandle pinnedPacket2 = GCHandle.Alloc(btEvent.baEventData, GCHandleType.Pinned);
-                                    BT_CONNECT_EVENT btconndata2 = (BT_CONNECT_EVENT)Marshal.PtrToStructure(pinnedPacket2.AddrOfPinnedObject(), typeof(BT_CONNECT_EVENT));
-                                    pinnedPacket2.Free(); //00:1d:df:54:c5:c5
-                                    OnBTchanged(new BTmonEventArgs("connected " + btconndata2.bta.ToString() + " " +btconndata2.hConnection.ToString("x"), true));
+                                    bt_mode_changed_data = new BT_mode_changed_event_data(btEvent.baEventData);
+                                    OnBTchanged(new BTmonEventArgs("mode changed " + bt_mode_changed_data.bt_addr.ToString() + " 0x" + bt_mode_changed_data.connect_handle.ToString("x08"),
+                                        setConnected(true)));
                                     break;
-                            }
+                            }//dwEventID
                             break;
+                            #endregion
                         case Wait_Object.WAIT_ABANDONED:
                             //wait has abandoned
-                            OnBTchanged(new BTmonEventArgs("WAIT_ABANDONED", false));
+                            System.Diagnostics.Debug.WriteLine("btMon thread: WAIT_ABANDONED");
                             break;
                         case Wait_Object.WAIT_TIMEOUT:
                             //timed out
-                            //OnBTchanged(new BTmonEventArgs(".", false));
+                            System.Diagnostics.Debug.WriteLine("btMon thread: WAIT_TIMEOUT");
                             break;
-                    }
-//                    System.Threading.Thread.Sleep(3000);
-//                    OnBTchanged(new BTmonEventArgs("test", false));
-                }
+                    }//WaitRes
+                }//while bRunThread
             }
             catch (ThreadAbortException ex)
             {
+                System.Diagnostics.Debug.WriteLine("btMon thread ThreadAbortException: " + ex.Message + "\r\n" + ex.StackTrace);
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine("btMon thread exception: " + ex.Message + "\r\n" + ex.StackTrace);
             }
             finally
             {
+                Marshal.FreeHGlobal(msgBuffer);
                 StopBluetoothNotifications(hBTevent);
                 CloseMsgQueue(hMsgQueue);
             }
@@ -424,6 +279,10 @@ namespace BTmonCF
         public delegate void BTmonEventHandler(Object sender, BTmonEventArgs e);
         public event BTmonEventHandler OnBTchangeEventHandler;
 
+        /// <summary>
+        /// event will be fired for changes in BT connection
+        /// </summary>
+        /// <param name="e"></param>
         protected virtual void OnBTchanged(BTmonEventArgs e)
         {
             BTmonEventHandler handler = OnBTchangeEventHandler;
@@ -435,13 +294,34 @@ namespace BTmonCF
             System.Diagnostics.Debug.WriteLine(e.message);
         }
 
+        /// <summary>
+        /// event arguments of OnBTchanged event
+        /// </summary>
         public class BTmonEventArgs:EventArgs{
+            /// <summary>
+            /// a general msg text with BT MAC, handle or general information about the change
+            /// </summary>
             public string message="";
+            /// <summary>
+            /// var holding the connection state
+            /// </summary>
             public bool connected = false;
+            /// <summary>
+            /// var used to hold a BT MAC address of a BT change
+            /// </summary>
+            public BT_ADDR btMAC;
+
             public BTmonEventArgs(string msg, bool connectState)
             {
                 this.message = msg;
                 this.connected = connectState;
+                btMAC = new BT_ADDR();
+            }
+            public BTmonEventArgs(string msg, bool connectState, BT_ADDR btAddr)
+            {
+                this.message = msg;
+                this.connected = connectState;
+                this.btMAC = btAddr;
             }
         }
 

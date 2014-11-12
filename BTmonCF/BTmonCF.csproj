@@ -56,7 +56,16 @@
     <Compile Include="btmon.cs">
       <SubType>Component</SubType>
     </Compile>
+    <Compile Include="BT_event_data.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="NativeFunctions.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="README.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CompactFramework.CSharp.targets" />
   <ProjectExtensions>
