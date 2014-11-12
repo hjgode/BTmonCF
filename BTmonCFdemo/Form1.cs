@@ -60,6 +60,8 @@ namespace BTmonCFdemo
                 addLog("Register COM port failed!", new BTmon.BTmonEventArgs("",true));
 
             timer1.Tick += new EventHandler(timer1_Tick);
+            timer1.Interval = 1000;
+            timer1.Enabled = true;
         }
 
         void openPort()
@@ -72,8 +74,6 @@ namespace BTmonCFdemo
                 serialPort.ReadTimeout = 300;
                 serialPort.Open();
                 addLog("Serial Port " + serialPortString + " opened", new BTmon.BTmonEventArgs("", true));
-                timer1.Interval = 1000;
-                timer1.Enabled = true;
             }
             catch (Exception ex)
             {
@@ -96,13 +96,17 @@ namespace BTmonCFdemo
         {
             if (serialPort == null)
                 openPort();
-            serialPort.Write("");
-            try
+            if (serialPort != null)
             {
-                string s = serialPort.ReadExisting();
-            }
-            catch (Exception) {
-                openPort();
+                try
+                {
+                    serialPort.Write("");
+                    string s = serialPort.ReadExisting();
+                }
+                catch (Exception)
+                {
+                    openPort();
+                }
             }
         }
 
@@ -110,10 +114,15 @@ namespace BTmonCFdemo
         {
         }
 
+        bool lastConnectState = false;
         void _btMon_OnBTchangeEventHandler(object sender, BTmon.BTmonEventArgs e)
         {
             addLog(e.message, e);
-
+            if (lastConnectState != e.connected)
+            {
+                openPort();
+                lastConnectState = e.connected;
+            }
             //txtLog.Text += e.message + "\r\n";
         }
 

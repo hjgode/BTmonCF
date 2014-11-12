@@ -44,7 +44,7 @@ namespace BTmonCF
         System.Threading.Thread msgThread=null;
         bool bRunThread = true;
         object lockObject = new object();
-        bool _Connected = false;
+        bool _Connected = true;
         public bool Connected
         {
             get
@@ -58,6 +58,7 @@ namespace BTmonCF
 
         public BTmon()
         {
+            addLog(DateTime.Now.ToLongTimeString() + " " + "BTmon class init");
             startThread();
         }
 
@@ -86,6 +87,7 @@ namespace BTmonCF
         
         public new void Dispose()
         {
+            addLog(DateTime.Now.ToLongTimeString() + " " + "BTmon class Dispose()");
             stopThread();
             base.Dispose();
         }
@@ -101,6 +103,8 @@ namespace BTmonCF
 
         void btMsgThread()
         {
+            //only BTE_DISCONNECTION and BTE_CONNECTION change this state!
+            bool bLastConnectState = _Connected;
             addLog("btmon thread about to start");
             IntPtr hMsgQueue=IntPtr.Zero;
             IntPtr hBTevent = IntPtr.Zero;
@@ -121,8 +125,10 @@ namespace BTmonCF
                 hMsgQueue = CreateMsgQueue(IntPtr.Zero, ref msgQueueOptions);
 
                 if (hMsgQueue == IntPtr.Zero)
+                {
+                    addLog("Create MsgQueue failed");
                     throw new Exception("Create MsgQueue failed");
-
+                }
                 hBTevent = RequestBluetoothNotifications(
                             BTE_CLASSES.BTE_CLASS_CONNECTIONS |
                                 //BTE_CLASSES.BTE_CONNECTION |
@@ -191,76 +197,79 @@ namespace BTmonCF
                             else
                                 continue; //start a new while cirlce
 
-                            System.Diagnostics.Debug.WriteLine("BTEVENT signaled: " + ((BTE_CLASSES)(btEvent.dwEventId)).ToString());
+                            addLog("BTEVENT signaled: " + ((BTE_CLASSES)(btEvent.dwEventId)).ToString());
 
                             // we are interested in the event type
                             switch ((BTE_CLASSES)btEvent.dwEventId)
                             #region BTE_EVENT_PROCESSSING
                             {
                                 case BTE_CLASSES.BTE_CONNECTION:
+                                    bLastConnectState = true;
                                     bt_connect_data = new BT_connect_event_data(btEvent.baEventData);
                                     OnBTchanged(new BTmonEventArgs("connected " + bt_connect_data.bt_addr.ToString() + " 0x" + bt_connect_data.connect_handle.ToString("x08"),
-                                        setConnected(true)));
+                                        setConnected(bLastConnectState)));
                                     break;
                                 case BTE_CLASSES.BTE_DISCONNECTION:
+                                    bLastConnectState = false;
                                     bt_disconnect_data = new BT_disconnect_event_data(btEvent.baEventData);
                                     OnBTchanged(new BTmonEventArgs("disconnected 0x" + bt_disconnect_data.connect_handle.ToString("x08"),
-                                        setConnected(false)));
+                                        setConnected(bLastConnectState)));
                                     break;
                                 case BTE_CLASSES.BTE_ROLE_SWITCH:
                                     bt_role_switch_event_data = new BT_role_switch_event_data(btEvent.baEventData);
                                     OnBTchanged(new BTmonEventArgs("role switch 0x" + bt_role_switch_event_data.bt_addr.ToString() +
-                                        "role:" + bt_role_switch_event_data._role.ToString(), setConnected(false)));
+                                        "role:" + bt_role_switch_event_data._role.ToString(), 
+                                        setConnected(bLastConnectState)));
                                     break;
                                 case BTE_CLASSES.BTE_STACK_DOWN:
                                     OnBTchanged(new BTmonEventArgs("stack down! " + DateTime.Now.ToLongTimeString(),
-                                        setConnected(false)));
+                                        setConnected(bLastConnectState)));
                                     break;
                                 case BTE_CLASSES.BTE_STACK_UP:
                                     OnBTchanged(new BTmonEventArgs("stack up! " + DateTime.Now.ToLongTimeString(),
-                                        setConnected(false)));
+                                        setConnected(bLastConnectState)));
                                     break;
                                 case BTE_CLASSES.BTE_CONNECTION_FAILED:
                                     bt_connect_data = new BT_connect_event_data(btEvent.baEventData);
                                     OnBTchanged(new BTmonEventArgs("connect failed " + bt_connect_data.bt_addr.ToString() + " 0x" + bt_connect_data.connect_handle.ToString("x08"),
-                                        setConnected(false)));
+                                        setConnected(bLastConnectState)));
                                     break;
                                 case BTE_CLASSES.BTE_KEY_REVOKED:
                                     bt_link_event_data = new BT_link_key_event_data(btEvent.baEventData);
                                     OnBTchanged(new BTmonEventArgs("key revoked " + bt_link_event_data.bt_addr.ToString(),
-                                        setConnected(false)));
+                                        setConnected(bLastConnectState)));
                                     break;
                                 case BTE_CLASSES.BTE_KEY_NOTIFY:
                                     bt_link_event_data = new BT_link_key_event_data(btEvent.baEventData);
                                     OnBTchanged(new BTmonEventArgs("key notify " + bt_link_event_data.bt_addr.ToString(),
-                                        setConnected(false)));
+                                        setConnected(bLastConnectState)));
                                     break;
                                 case BTE_CLASSES.BTE_MODE_CHANGE:
                                     bt_mode_changed_data = new BT_mode_changed_event_data(btEvent.baEventData);
                                     OnBTchanged(new BTmonEventArgs("mode changed " + bt_mode_changed_data.bt_addr.ToString() + " 0x" + bt_mode_changed_data.connect_handle.ToString("x08"),
-                                        setConnected(true)));
+                                        setConnected(bLastConnectState)));
                                     break;
                             }//dwEventID
                             break;
                             #endregion
                         case Wait_Object.WAIT_ABANDONED:
                             //wait has abandoned
-                            System.Diagnostics.Debug.WriteLine("btMon thread: WAIT_ABANDONED");
+                            addLog("btMon thread: WAIT_ABANDONED");
                             break;
                         case Wait_Object.WAIT_TIMEOUT:
                             //timed out
-                            System.Diagnostics.Debug.WriteLine("btMon thread: WAIT_TIMEOUT");
+                            addLog("btMon thread: WAIT_TIMEOUT");
                             break;
                     }//WaitRes
                 }//while bRunThread
             }
             catch (ThreadAbortException ex)
             {
-                System.Diagnostics.Debug.WriteLine("btMon thread ThreadAbortException: " + ex.Message + "\r\n" + ex.StackTrace);
+                addLog("btMon thread ThreadAbortException: " + ex.Message + "\r\n" + ex.StackTrace);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine("btMon thread exception: " + ex.Message + "\r\n" + ex.StackTrace);
+                addLog("btMon thread exception: " + ex.Message + "\r\n" + ex.StackTrace);
             }
             finally
             {
@@ -269,11 +278,6 @@ namespace BTmonCF
                 CloseMsgQueue(hMsgQueue);
             }
             addLog("btmon thread ended");
-        }
-
-        void addLog(String str)
-        {
-            System.Diagnostics.Debug.WriteLine(str);
         }
 
         public delegate void BTmonEventHandler(Object sender, BTmonEventArgs e);
@@ -291,7 +295,7 @@ namespace BTmonCF
                 // Invokes the delegates. 
                 handler(this, e);
             }
-            System.Diagnostics.Debug.WriteLine(e.message);
+            addLog("OnBTchanged: " + e.message);
         }
 
         /// <summary>
@@ -302,10 +306,14 @@ namespace BTmonCF
             /// a general msg text with BT MAC, handle or general information about the change
             /// </summary>
             public string message="";
+            private bool _connected = false;
             /// <summary>
             /// var holding the connection state
             /// </summary>
-            public bool connected = false;
+            public bool connected
+            {
+                public get { return _connected; }
+            }
             /// <summary>
             /// var used to hold a BT MAC address of a BT change
             /// </summary>
@@ -314,16 +322,40 @@ namespace BTmonCF
             public BTmonEventArgs(string msg, bool connectState)
             {
                 this.message = msg;
-                this.connected = connectState;
+                this._connected = connectState;
                 btMAC = new BT_ADDR();
+                addLog(DateTime.Now.ToLongTimeString() + ": '" + msg + "' " + connectState.ToString() + " " + btMAC.ToString());
             }
             public BTmonEventArgs(string msg, bool connectState, BT_ADDR btAddr)
             {
                 this.message = msg;
-                this.connected = connectState;
+                this._connected = connectState;
                 this.btMAC = btAddr;
+                addLog(DateTime.Now.ToLongTimeString() + ": '" + msg + "' " + connectState.ToString() + " " + btMAC.ToString());
             }
         }
 
+        #region logging
+        static string logFile = "\\BTmonCF.log";
+        static object lockFile = new object();
+        static void addLog(string s)
+        {
+            System.Diagnostics.Debug.WriteLine(s);
+            try
+            {
+                lock (lockFile)
+                {
+                    using (System.IO.StreamWriter sw = new System.IO.StreamWriter(logFile, true))
+                    {
+                        sw.WriteLine(s);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("addLog: " + ex.Message);
+            }
+        }
+        #endregion
     }
 }

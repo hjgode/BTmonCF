@@ -56,3 +56,11 @@ pseudo code sample:
             addLog(e.message, e);
         }
         
+versions:
+	1.0.0.0:
+		initial release
+	1.1.0.0:
+		added logging
+		only BTE_DISCONNECTION and BTE_CONNECTION will change the connect state!
+
+		

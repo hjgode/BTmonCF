@@ -8,3 +8,13 @@ D:\c-source\Active\BTmonCF\BTmonCFdemo\obj\Debug\BTmonCFdemo.Properties.Resource
 D:\c-source\Active\BTmonCF\BTmonCFdemo\obj\Debug\BTmonCFdemo.csproj.GenerateResource.Cache
 D:\c-source\Active\BTmonCF\BTmonCFdemo\obj\Debug\BTmonCFdemo.exe
 D:\c-source\Active\BTmonCF\BTmonCFdemo\obj\Debug\BTmonCFdemo.pdb
+D:\svn\git\BTmonCF\BTmonCFdemo\bin\Debug\BTmonCFdemo.exe
+D:\svn\git\BTmonCF\BTmonCFdemo\bin\Debug\BTmonCFdemo.pdb
+D:\svn\git\BTmonCF\BTmonCFdemo\bin\Debug\BTmonCF.dll
+D:\svn\git\BTmonCF\BTmonCFdemo\bin\Debug\BTmonCF.pdb
+D:\svn\git\BTmonCF\BTmonCFdemo\obj\Debug\ResolveAssemblyReference.cache
+D:\svn\git\BTmonCF\BTmonCFdemo\obj\Debug\BTmonCFdemo.Form1.resources
+D:\svn\git\BTmonCF\BTmonCFdemo\obj\Debug\BTmonCFdemo.Properties.Resources.resources
+D:\svn\git\BTmonCF\BTmonCFdemo\obj\Debug\BTmonCFdemo.csproj.GenerateResource.Cache
+D:\svn\git\BTmonCF\BTmonCFdemo\obj\Debug\BTmonCFdemo.exe
+D:\svn\git\BTmonCF\BTmonCFdemo\obj\Debug\BTmonCFdemo.pdb
