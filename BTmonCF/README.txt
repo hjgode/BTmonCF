@@ -62,5 +62,5 @@ versions:
 	1.1.0.0:
 		added logging
 		only BTE_DISCONNECTION and BTE_CONNECTION will change the connect state!
-
-		
+		added separate event for BTE_DISCONNECTION and BTE_CONNECTION: OnBTConnectChanged
+		OnBTchanged event will now be used only for other BT changes

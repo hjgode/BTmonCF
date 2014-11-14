@@ -50,14 +50,17 @@ namespace BTmonCFdemo
             btMAC = new BTmon.BT_MAC(new byte[] { 00, 0x1d, 0xdf, 0x54, 0xc5, 0xc5, 0x00, 0x00 });
             System.Diagnostics.Debug.WriteLine(btMAC.ToString());
 
-            _btMon.OnBTchangeEventHandler += new BTmon.BTmonEventHandler(_btMon_OnBTchangeEventHandler);
+            //subscribe to info messages
+            _btMon.OnBTEventHandler += new BTmon.BTmonEventHandler(_btMon_OnBTchangeEventHandler);
 
+            //subscribe to connect change messages
+            _btMon.OnBTConnectChangeEventHandler += new BTmon.BTmonConnectStateChangedHandler(_btMon_OnBTConnectChangeEventHandler);
             //BTmonCF.BluetoothPort btPort = new BluetoothPort("COM", 6, btMAC.getBT_ADDR());
             //serialPortString = btPort.szComPort;
             if (serialPortString != "")
                 openPort();
             else
-                addLog("Register COM port failed!", new BTmon.BTmonEventArgs("",true));
+                addLog("Register COM port failed!", new BTmon.BTmonEventArgs("Register COM port failed!"));
 
             timer1.Tick += new EventHandler(timer1_Tick);
             timer1.Interval = 1000;
@@ -73,11 +76,11 @@ namespace BTmonCFdemo
                 serialPort.WriteTimeout= 300;
                 serialPort.ReadTimeout = 300;
                 serialPort.Open();
-                addLog("Serial Port " + serialPortString + " opened", new BTmon.BTmonEventArgs("", true));
+                addLog("Serial Port " + serialPortString + " opened", new BTmon.BTmonEventArgs("Serial Port open"));
             }
             catch (Exception ex)
             {
-                addLog("Serial Port " + serialPortString + " open failed with "+ex.Message, new BTmon.BTmonEventArgs("",false));
+                addLog("Serial Port " + serialPortString + " open failed with "+ex.Message, new BTmon.BTmonEventArgs("Serial Port open FAILED"));
                 closePort();
             }
         }
@@ -115,20 +118,53 @@ namespace BTmonCFdemo
         }
 
         bool lastConnectState = false;
+        void _btMon_OnBTConnectChangeEventHandler(object sender, BTmon.BTmonConnectChangedEventArgs e)
+        {
+            if (lastConnectState != e.bConnected)
+            {
+                openPort();
+                lastConnectState = e.bConnected;
+            }
+            addLog(e);
+        }
+
         void _btMon_OnBTchangeEventHandler(object sender, BTmon.BTmonEventArgs e)
         {
             addLog(e.message, e);
-            if (lastConnectState != e.connected)
-            {
-                openPort();
-                lastConnectState = e.connected;
-            }
             //txtLog.Text += e.message + "\r\n";
         }
 
-        bool bLastState = false;
+        delegate void SetTextCallback(BTmon.BTmonConnectChangedEventArgs e);
+        public void addLog(BTmon.BTmonConnectChangedEventArgs e)
+        {
+            if (this.txtLog.InvokeRequired)
+            {
+                SetTextCallback d = new SetTextCallback(addLog);
+                this.Invoke(d, new object[] { e });
+            }
+            else
+            {
+                if (e.bConnected)
+                {
+                    openPort();
+                    if (btMAC.Equals(e.btMAC))  //a disconnect does only know the handle, no BT_MAC
+                        panel1.BackColor = Color.LightGreen;
+                }
+                else
+                {
+                    panel1.BackColor = Color.LightPink;
+                }
+                if (txtLog.Text.Length > 20000)
+                    txtLog.Text = "";
+                txtLog.Text += e.ToString() + "\r\n";
+                txtLog.SelectionLength = 0;
+                txtLog.SelectionStart = txtLog.Text.Length - 1;
+                txtLog.ScrollToCaret();
+            }
 
-        delegate void SetTextCallback(string text, BTmon.BTmonEventArgs e);
+        }
+
+        delegate void SetTextCallback2(string text, BTmon.BTmonEventArgs e);
         public void addLog(string text, BTmon.BTmonEventArgs e)
         {
             // InvokeRequired required compares the thread ID of the
@@ -136,26 +172,11 @@ namespace BTmonCFdemo
             // If these threads are different, it returns true.
             if (this.txtLog.InvokeRequired)
             {
-                SetTextCallback d = new SetTextCallback(addLog);
+                SetTextCallback2 d = new SetTextCallback2(addLog);
                 this.Invoke(d, new object[] { text, e });
             }
             else
             {
-                if (e.connected)
-                {
-                    if (bLastState != e.connected)
-                    {
-                        bLastState = e.connected;
-                        openPort();
-                    }
-                    if (btMAC.Equals(e.btMAC))  //a disconnect does only know the handle, no BT_MAC
-                        panel1.BackColor = Color.LightGreen;
-                }
-                else
-                {
-                    panel1.BackColor = Color.LightPink;
-                    bLastState = false;
-                }
                 if (txtLog.Text.Length > 20000)
                     txtLog.Text = "";
                 txtLog.Text += text + "\r\n";
